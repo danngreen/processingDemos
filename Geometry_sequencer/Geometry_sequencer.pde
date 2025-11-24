@@ -100,7 +100,6 @@ class Knob {
   }
 }
 
-// ---------------- Button (Reset) ----------------
 class Button {
   float x, y, radius;
   boolean wasPressed = false;
@@ -110,24 +109,23 @@ class Button {
   Button(float x, float y, float radius, String label){
     this.x = x;
     this.y = y;
-    this.radius = radius * 0.5; // half-size
+    this.radius = radius * 0.4; // half-size
     this.label = label;
   }
 
   void display(){
-    // Flash red internally if active
-    if(flashAlpha > 0){
-      fill(255,0,0, flashAlpha);
-      noStroke();
-      ellipse(x, y, radius*2, radius*2);
-      flashAlpha -= 5;
-      if(flashAlpha < 0) flashAlpha = 0;
-    }
-
-    // Base button color white
+    // Draw base button (white)
     fill(255);
     noStroke();
     ellipse(x, y, radius*2, radius*2);
+
+    // Overlay flash red if active
+    if(flashAlpha > 0){
+      fill(255,0,0, flashAlpha);
+      ellipse(x, y, radius*2, radius*2);
+      flashAlpha -= 5;          // fade out
+      if(flashAlpha < 0) flashAlpha = 0;
+    }
 
     // Draw label below button
     fill(255);
@@ -139,7 +137,9 @@ class Button {
     return dist(mx, my, x, y) < radius;
   }
 
-  void trigger(){ flashAlpha = 255; }
+  void trigger(){ 
+    flashAlpha = 255; // start flash
+  }
 }
 
 // ---------------- Sequencer ----------------
