@@ -12,6 +12,7 @@ Knob clockKnob;
 // --- Sequencer array ---
 Sequencer[] sequencers;
 
+// ---------------- VertexDot ----------------
 class VertexDot {
   float x, y;
   color baseCol = color(255);
@@ -47,7 +48,7 @@ class VertexDot {
   }
 }
 
-// --- Knob class ---
+// ---------------- Knob ----------------
 class Knob {
   float x, y, radius;
   boolean active = false;
@@ -70,7 +71,6 @@ class Knob {
     line(x, y, x + cos(angle)*radius*0.8, y + sin(angle)*radius*0.8);
 
     noStroke(); fill(255); textAlign(CENTER, CENTER);
-
     text(label, x, y + radius + 15);
 
     String valStr = "";
@@ -100,13 +100,56 @@ class Knob {
   }
 }
 
-// --- Sequencer class ---
+// ---------------- Button (Reset) ----------------
+class Button {
+  float x, y, radius;
+  boolean wasPressed = false;
+  float flashAlpha = 0;
+  String label;
+
+  Button(float x, float y, float radius, String label){
+    this.x = x;
+    this.y = y;
+    this.radius = radius * 0.5; // half-size
+    this.label = label;
+  }
+
+  void display(){
+    // Flash red internally if active
+    if(flashAlpha > 0){
+      fill(255,0,0, flashAlpha);
+      noStroke();
+      ellipse(x, y, radius*2, radius*2);
+      flashAlpha -= 5;
+      if(flashAlpha < 0) flashAlpha = 0;
+    }
+
+    // Base button color white
+    fill(255);
+    noStroke();
+    ellipse(x, y, radius*2, radius*2);
+
+    // Draw label below button
+    fill(255);
+    textAlign(CENTER, TOP);
+    text(label, x, y + radius + 5);
+  }
+
+  boolean hit(float mx, float my){
+    return dist(mx, my, x, y) < radius;
+  }
+
+  void trigger(){ flashAlpha = 255; }
+}
+
+// ---------------- Sequencer ----------------
 class Sequencer {
   float centerX, centerY;
   VertexDot[] dots;
   int currentStep = -1;
   Knob sidesKnob, rotateKnob, clkDivideKnob;
-  float stepTimer = 0; // accumulated time
+  float stepTimer = 0;
+  Button resetButton;
 
   Sequencer(float centerX, float centerY){
     this.centerX = centerX;
@@ -120,6 +163,9 @@ class Sequencer {
     clkDivideKnob = new Knob(centerX - spacing, knobY, 20, "Clk Divide", 0.0);
     sidesKnob     = new Knob(centerX, knobY, 20, "Length", 0.0);
     rotateKnob    = new Knob(centerX + spacing, knobY, 20, "Rotate", 0.0);
+
+    // Reset button at center of polygon
+    resetButton = new Button(centerX, centerY, 20, "Reset");
   }
 
   void update(float mainClockInterval){
@@ -152,9 +198,8 @@ class Sequencer {
       if(i == currentStep){
         if(dotBase == color(255,255,0)) dots[i].targetCol = color(0,255,0);
         else dots[i].targetCol = color(255,0,0);
-      } else {
-        dots[i].targetCol = dotBase;
-      }
+      } else dots[i].targetCol = dotBase;
+
       dots[i].updateColor();
     }
 
@@ -175,6 +220,7 @@ class Sequencer {
     clkDivideKnob.display();
     sidesKnob.display();
     rotateKnob.display();
+    resetButton.display();
   }
 
   void handleMouse(float mx, float my){
@@ -189,9 +235,17 @@ class Sequencer {
       int patternIndex = (i-rotIndex+sides)%sides;
       if(dots[i].isHit(adjX,adjY,dotSize)) dots[patternIndex].toggle();
     }
+
+    // handle reset button rising edge
+    if(resetButton.hit(mx,my) && !resetButton.wasPressed){
+      resetButton.trigger(); // flash red
+      currentStep = 0; // reset immediately
+    }
+    resetButton.wasPressed = resetButton.hit(mx,my);
   }
 }
 
+// ---------------- Setup ----------------
 void setup() {
   size(960, 400);
   smooth();
@@ -205,13 +259,14 @@ void setup() {
   sequencers[1] = new Sequencer(width/2, height*0.45);
   sequencers[2] = new Sequencer(width-marginX, height*0.45);
 
-  // Position the main clock knob between sequencer 2 and 3, aligned with "noon" tick
-  float radius = min(width, height) * 0.25;   // same radius as sequencers
+  // Clock speed knob between sequencer 2 & 3, top of polygon
+  float radius = min(width, height) * 0.25;
   float knobX = (sequencers[1].centerX + sequencers[2].centerX) / 2;
-  float knobY = sequencers[1].centerY - radius; // top of polygon
+  float knobY = sequencers[1].centerY - radius;
   clockKnob = new Knob(knobX, knobY, 20, "Clock Speed", 0.2);
 }
 
+// ---------------- Draw ----------------
 void draw() {
   background(30);
 
@@ -219,7 +274,6 @@ void draw() {
   float maxInterval = 1.0;
   float mainClockInterval = lerp(maxInterval, minInterval, clockKnob.value);
 
-  // update all sequencers in real time
   for(Sequencer seq : sequencers){
     seq.update(mainClockInterval);
   }
@@ -227,6 +281,7 @@ void draw() {
   clockKnob.display();
 }
 
+// ---------------- Mouse ----------------
 void mousePressed(){
   if(clockKnob.hit(mouseX, mouseY)) clockKnob.active = true;
   for(Sequencer seq : sequencers){
@@ -253,10 +308,11 @@ void mouseReleased(){
     seq.sidesKnob.active = false;
     seq.rotateKnob.active = false;
     seq.clkDivideKnob.active = false;
+    seq.resetButton.wasPressed = false;
   }
 }
 
-// OSC functions
+// ---------------- OSC ----------------
 void CV1In(float voltage){ assignCV(0,voltage); }
 void CV2In(float voltage){ assignCV(1,voltage); }
 void CV4In(float voltage){ assignCV(3,voltage); }
