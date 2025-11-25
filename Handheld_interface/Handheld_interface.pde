@@ -1,3 +1,14 @@
+void drawHandheldScreen() {
+  rectMode(CORNER);
+  ellipseMode(CORNER);
+  fill(255,0,0);
+  ellipse(-50, -50, 300, 300);
+  fill(0,255,0);
+  ellipse(310, 10, 300, 500);
+  fill(0,0,255);
+  ellipse(710, 10, 300, 500);
+}
+
 int screenW = 960;
 int screenH = 400;
 
@@ -45,6 +56,9 @@ void setup() {
 }
 
 void draw() {
+  rectMode(CENTER);
+  ellipseMode(CENTER);
+
   background(255);
 
   float cx = width / 2.0;
@@ -60,6 +74,18 @@ void draw() {
   float screenY = cy - panelH/2 + 50 + screenH/2;
   fill(0);
   rect(cx, screenY, screenW, screenH, 8);
+
+  imageMode(CENTER);
+  clip(cx, screenY, screenW, screenH);
+  pushMatrix();
+  translate(cx - screenW /2, screenY - screenH /2);
+  drawHandheldScreen();
+  popMatrix();
+  noClip();
+
+  rectMode(CENTER);
+  ellipseMode(CENTER);
+  textSize(14);
 
   // BUTTON ROW
   float buttonRowY = screenY + screenH/2 + 70;
@@ -194,11 +220,13 @@ void draw() {
   popMatrix();
 
 
-// Cube label ABOVE the cube
-fill(0);
-textAlign(CENTER);
-float labelSpacing = 40; // pixels above the cube
-text("Accelerometer", width - margin - cubeSize/2, height - margin - cubeSize/2 - cubeSize/2 - labelSpacing);
+  // Cube label ABOVE the cube
+  fill(0);
+  textAlign(CENTER);
+  float labelSpacing = 40; // pixels above the cube
+  text("Accelerometer", width - margin - cubeSize/2, height - margin - cubeSize/2 - cubeSize/2 - labelSpacing);
+
+
 }
 
 void mousePressed() {
