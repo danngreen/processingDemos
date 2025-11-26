@@ -1,0 +1,365 @@
+import processing.sound.*;
+Sound sound;        // <-- You MUST create this first
+AudioIn[] ins = new AudioIn[16];
+Amplitude[] amps = new Amplitude[16];
+float[] level = new float[16];
+
+int screenW = 960;
+int screenH = 400;
+
+int buttonSize = 75;
+int encoderSize = 150;
+int padSize = 150;
+int padIndicatorSize = 20;
+int cubeSize = 80;
+
+// Encoder state
+float leftEncAngle = -HALF_PI;
+float rightEncAngle = -HALF_PI;
+float leftEncTarget = leftEncAngle;
+float rightEncTarget = rightEncAngle;
+
+// Dragging info
+int draggingEncoder = -1;
+float lastMouseAngle = 0;
+
+// Double-click timing for encoders
+int[] lastClickTime = {0, 0};
+boolean[] encoderPressed = {false, false};
+int encoderPressDuration = 200; // ms
+
+// Button state
+boolean[] buttonPressed = new boolean[4];
+
+// XY Pad
+PVector padIndicator;
+boolean draggingPad = false;
+
+// Cube rotation
+float cubeRotX = 0;
+float cubeRotY = 0;
+boolean draggingCube = false;
+float lastCubeMouseX, lastCubeMouseY;
+
+void setup() {
+  size(1500, 1000, P3D);
+  rectMode(CENTER);
+  ellipseMode(CENTER);
+  textSize(14);
+
+  padIndicator = new PVector(0, 0);
+  
+  // --- Create Sound engine BEFORE listing devices ---
+  sound = new Sound(this);
+
+  println("Audio devices:");
+  String[] devices = Sound.list();
+//  println(devices);
+  
+  //// --- Find BlackHole ---
+  //int blackholeIndex = -1;
+  //for (int i = 0; i < devices.length; i++) {
+  //  if (devices[i].toLowerCase().contains("blackhole")) {
+  //    blackholeIndex = i;
+  //    break;
+  //  }
+  //}
+  int blackholeIndex = 12;
+
+  if (blackholeIndex != -1) {
+    println("✔ Selecting device #" + blackholeIndex + ": " + devices[blackholeIndex]);
+
+    // IMPORTANT:
+    // You must call *sound.inputDevice*, not Sound.inputDevice
+    sound.inputDevice(blackholeIndex);
+  } else {
+    println("❌ BlackHole not found.");
+  }
+
+  delay(200); // macOS needs a short delay after device switch
+
+  for (int i = 0; i < 16; i++) {
+    ins[i] = new AudioIn(this, i);
+    amps[i] = new Amplitude(this);
+    ins[i].start();
+    amps[i].input(ins[i]);
+  }
+}
+
+void draw() {
+  rectMode(CENTER);
+  ellipseMode(CENTER);
+
+  background(255);
+
+  float cx = width / 2.0;
+  float cy = height / 2.0;
+  float panelW = screenW + 150;
+  float panelH = screenH + 440;
+
+  // Panel background
+  fill(32);
+  rect(cx, cy, panelW, panelH, 25);
+
+  // SCREEN
+  float screenY = cy - panelH/2 + 50 + screenH/2;
+  fill(0);
+  rect(cx, screenY, screenW, screenH, 8);
+
+  imageMode(CENTER);
+  clip(cx, screenY, screenW, screenH);
+  pushMatrix();
+  translate(cx - screenW /2, screenY - screenH /2);
+  drawHandheldScreen();
+  popMatrix();
+  noClip();
+
+  rectMode(CENTER);
+  ellipseMode(CENTER);
+  textSize(14);
+
+  // BUTTON ROW
+  float buttonRowY = screenY + screenH/2 + 70;
+  float spacing = screenW / 5.0;
+  float firstButtonX = cx - screenW/2 + spacing;
+
+  color[] baseColors = { color(220, 50, 50), color(140), color(180), color(180) };
+  for (int i = 0; i < 4; i++) {
+    color btnColor = buttonPressed[i] ? lerpColor(baseColors[i], color(0), 0.25) : baseColors[i];
+    fill(btnColor);
+    ellipse(firstButtonX + i * spacing, buttonRowY, buttonSize, buttonSize);
+
+    noFill();
+    stroke(0, 30);
+    strokeWeight(4);
+    ellipse(firstButtonX + i * spacing, buttonRowY, buttonSize * 0.9, buttonSize * 0.9);
+    noStroke();
+  }
+
+  // ENCODERS
+  float encY = buttonRowY + 150;
+  float leftEncX  = cx - screenW/4;
+  float rightEncX = cx + screenW/4;
+
+  fill(encoderPressed[0] ? 40 : 45);
+  ellipse(leftEncX, encY, encoderSize, encoderSize);
+  fill(encoderPressed[1] ? 40 : 45);
+  ellipse(rightEncX, encY, encoderSize, encoderSize);
+
+  // Smooth rotation
+  leftEncAngle += (leftEncTarget - leftEncAngle) * 0.2;
+  rightEncAngle += (rightEncTarget - rightEncAngle) * 0.2;
+
+  // Encoder indicators
+  stroke(255);
+  strokeWeight(4);
+  float knobRadius = encoderSize / 2.0;
+  float indicatorLength = knobRadius * 0.2;
+
+  float startX = leftEncX + cos(leftEncAngle) * (knobRadius - indicatorLength);
+  float startY = encY + sin(leftEncAngle) * (knobRadius - indicatorLength);
+  float endX   = leftEncX + cos(leftEncAngle) * knobRadius;
+  float endY   = encY + sin(leftEncAngle) * knobRadius;
+  line(startX, startY, endX, endY);
+
+  startX = rightEncX + cos(rightEncAngle) * (knobRadius - indicatorLength);
+  startY = encY + sin(rightEncAngle) * (knobRadius - indicatorLength);
+  endX   = rightEncX + cos(rightEncAngle) * knobRadius;
+  endY   = encY + sin(rightEncAngle) * knobRadius;
+  line(startX, startY, endX, endY);
+  noStroke();
+
+  // XY PAD
+  float padX = cx;
+  float padY = encY + 10;
+  pushMatrix();
+  translate(padX, padY);
+  rotate(radians(45));
+  fill(65);
+  rect(0, 0, padSize, padSize, 10);
+
+  noFill();
+  stroke(0, 0, 255);
+  strokeWeight(3);
+  ellipse(padIndicator.x, padIndicator.y, padIndicatorSize, padIndicatorSize);
+  noStroke();
+  popMatrix();
+
+  // Reset encoder press effect
+  for (int i = 0; i < 2; i++) {
+    if (encoderPressed[i] && millis() - lastClickTime[i] > encoderPressDuration) {
+      encoderPressed[i] = false;
+    }
+  }
+
+  // ---------------------------
+  // DRAW ACCELEROMETER CUBE ON TOP
+  // ---------------------------
+  pushMatrix();
+  hint(DISABLE_DEPTH_TEST);
+  ortho();
+  float margin = 50;
+  translate(width - margin - cubeSize/2, height - margin - cubeSize/2, 0);
+  rotateX(cubeRotX);
+  rotateY(cubeRotY);
+
+  // Axes
+  strokeWeight(3);
+  stroke(255,0,0); line(0,0,0, 50,0,0); // X
+  stroke(0,255,0); line(0,0,0, 0,50,0); // Y
+  stroke(0,0,255); line(0,0,0, 0,0,50); // Z
+
+  // Cube faces in solid, high-contrast grayscale
+  noStroke();
+  beginShape(QUADS);
+  fill(240); // front
+  vertex(-cubeSize/2, -cubeSize/2, cubeSize/2);
+  vertex( cubeSize/2, -cubeSize/2, cubeSize/2);
+  vertex( cubeSize/2,  cubeSize/2, cubeSize/2);
+  vertex(-cubeSize/2,  cubeSize/2, cubeSize/2);
+
+  fill(50); // back
+  vertex(-cubeSize/2, -cubeSize/2, -cubeSize/2);
+  vertex(-cubeSize/2,  cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2,  cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2, -cubeSize/2, -cubeSize/2);
+
+  fill(180); // right
+  vertex( cubeSize/2, -cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2,  cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2,  cubeSize/2,  cubeSize/2);
+  vertex( cubeSize/2, -cubeSize/2,  cubeSize/2);
+
+  fill(120); // left
+  vertex(-cubeSize/2, -cubeSize/2, -cubeSize/2);
+  vertex(-cubeSize/2, -cubeSize/2,  cubeSize/2);
+  vertex(-cubeSize/2,  cubeSize/2,  cubeSize/2);
+  vertex(-cubeSize/2,  cubeSize/2, -cubeSize/2);
+
+  fill(200); // top
+  vertex(-cubeSize/2, -cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2, -cubeSize/2, -cubeSize/2);
+  vertex( cubeSize/2, -cubeSize/2,  cubeSize/2);
+  vertex(-cubeSize/2, -cubeSize/2,  cubeSize/2);
+
+  fill(80); // bottom
+  vertex(-cubeSize/2, cubeSize/2, -cubeSize/2);
+  vertex(-cubeSize/2, cubeSize/2,  cubeSize/2);
+  vertex( cubeSize/2, cubeSize/2,  cubeSize/2);
+  vertex( cubeSize/2, cubeSize/2, -cubeSize/2);
+  endShape();
+  popMatrix();
+
+
+  // Cube label ABOVE the cube
+  fill(0);
+  textAlign(CENTER);
+  float labelSpacing = 40; // pixels above the cube
+  text("Accelerometer", width - margin - cubeSize/2, height - margin - cubeSize/2 - cubeSize/2 - labelSpacing);
+
+
+}
+
+void mousePressed() {
+  float cx = width / 2.0;
+  float cy = height / 2.0;
+  float screenY = cy - (screenH + 440)/2 + 50 + screenH/2;
+  float buttonRowY = screenY + screenH/2 + 70;
+  float encY = buttonRowY + 150;
+  float leftEncX  = cx - screenW/4;
+  float rightEncX = cx + screenW/4;
+
+  // BUTTONS
+  float spacing = screenW / 5.0;
+  float firstButtonX = cx - screenW/2 + spacing;
+  for (int i = 0; i < 4; i++) {
+    if (dist(mouseX, mouseY, firstButtonX + i * spacing, buttonRowY) < buttonSize/2) {
+      buttonPressed[i] = true;
+    }
+  }
+
+  // ENCODERS
+  for (int i = 0; i < 2; i++) {
+    float encX = (i == 0) ? leftEncX : rightEncX;
+    if (dist(mouseX, mouseY, encX, encY) < encoderSize/2) {
+      int now = millis();
+      if (now - lastClickTime[i] < 400) encoderPressed[i] = true;
+      lastClickTime[i] = now;
+      draggingEncoder = i;
+      lastMouseAngle = atan2(mouseY - encY, mouseX - encX);
+    }
+  }
+
+  // XY PAD
+  float padXc = cx;
+  float padYc = encY + 10;
+  float relX = (mouseX - padXc) * cos(radians(-45)) - (mouseY - padYc) * sin(radians(-45));
+  float relY = (mouseX - padXc) * sin(radians(-45)) + (mouseY - padYc) * cos(radians(-45));
+  float maxPos = padSize/2 - padIndicatorSize/2;
+  if (abs(relX) <= padSize/2 && abs(relY) <= padSize/2) {
+    draggingPad = true;
+    padIndicator.x = constrain(relX, -maxPos, maxPos);
+    padIndicator.y = constrain(relY, -maxPos, maxPos);
+  }
+
+  // CUBE
+  float margin = 50;
+  if (mouseX > width - margin - cubeSize && mouseX < width - margin &&
+      mouseY > height - margin - cubeSize && mouseY < height - margin) {
+    draggingCube = true;
+    lastCubeMouseX = mouseX;
+    lastCubeMouseY = mouseY;
+  }
+}
+
+void mouseDragged() {
+  // ENCODERS
+  if (draggingEncoder != -1) {
+    float cx = width / 2.0;
+    float cy = height / 2.0;
+    float screenY = cy - (screenH + 440)/2 + 50 + screenH/2;
+    float buttonRowY = screenY + screenH/2 + 70;
+    float encY = buttonRowY + 150;
+    float encX = (draggingEncoder == 0) ? cx - screenW/4 : cx + screenW/4;
+
+    float currentMouseAngle = atan2(mouseY - encY, mouseX - encX);
+    float delta = currentMouseAngle - lastMouseAngle;
+    if (delta > PI) delta -= TWO_PI;
+    if (delta < -PI) delta += TWO_PI;
+
+    if (draggingEncoder == 0) leftEncTarget += delta;
+    else rightEncTarget += delta;
+
+    lastMouseAngle = currentMouseAngle;
+  }
+
+  // XY PAD
+  if (draggingPad) {
+    float cx = width / 2.0;
+    float cy = height / 2.0;
+    float buttonRowY = cy - (screenH + 440)/2 + 50 + screenH/2 + screenH/2 + 70;
+    float padXc = cx;
+    float padYc = buttonRowY + 150 + 10;
+
+    float relX = (mouseX - padXc) * cos(radians(-45)) - (mouseY - padYc) * sin(radians(-45));
+    float relY = (mouseX - padXc) * sin(radians(-45)) + (mouseY - padYc) * cos(radians(-45));
+    float maxPos = padSize/2 - padIndicatorSize/2;
+    padIndicator.x = constrain(relX, -maxPos, maxPos);
+    padIndicator.y = constrain(relY, -maxPos, maxPos);
+  }
+
+  // CUBE
+  if (draggingCube) {
+    cubeRotY += (mouseX - lastCubeMouseX) * 0.01;
+    cubeRotX += (mouseY - lastCubeMouseY) * 0.01;
+    lastCubeMouseX = mouseX;
+    lastCubeMouseY = mouseY;
+  }
+}
+
+void mouseReleased() {
+  draggingEncoder = -1;
+  draggingPad = false;
+  draggingCube = false;
+  for (int i = 0; i < 4; i++) buttonPressed[i] = false;
+}
